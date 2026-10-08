@@ -5,6 +5,7 @@
 """
 import json
 import os
+import shlex
 import subprocess
 import sys
 import tempfile
@@ -282,7 +283,6 @@ class Install(Base):
         self.assertEqual(r.returncode, 0, r.stderr)
         with open(os.path.join(spaced, ".claude", "settings.json"), encoding="utf-8") as f:
             cmd = json.load(f)["hooks"]["SessionStart"][0]["hooks"][0]["command"]
-        import shlex
         self.assertEqual(shlex.split(cmd)[1], os.path.join(spaced, ".claude", "hooks", "handoff_after_clear.py"))
 
     def test_lang_flag_sets_env(self):
@@ -303,8 +303,21 @@ class Install(Base):
         self.assertTrue(any(n.startswith("handoff.md.bak-") for n in os.listdir(d)))
 
     def test_dry_run_writes_nothing(self):
-        run(INSTALL, ["--dry-run", "--cleanup-days", "3650"], home=self.home)
+        r = run(INSTALL, ["--dry-run", "--cleanup-days", "3650"], home=self.home)
+        self.assertEqual(r.returncode, 0, r.stderr)
         self.assertFalse(os.path.exists(os.path.join(self.home, ".claude")))
+
+    def test_registers_all_three_hooks_with_exact_commands(self):
+        self.assertEqual(run(INSTALL, home=self.home).returncode, 0)
+        hooks_dir = os.path.join(self.home, ".claude", "hooks")
+        expected = {
+            "SessionStart": "python3 " + shlex.quote(os.path.join(hooks_dir, "handoff_after_clear.py")),
+            "UserPromptSubmit": "python3 " + shlex.quote(os.path.join(hooks_dir, "context_usage_reminder.py")),
+            "PostToolUse": "python3 " + shlex.quote(os.path.join(hooks_dir, "context_usage_reminder.py")),
+        }
+        hooks = self.settings()["hooks"]
+        for event, cmd in expected.items():
+            self.assertEqual([h["command"] for g in hooks.get(event, []) for h in g["hooks"]], [cmd], event)
 
 
 if __name__ == "__main__":
