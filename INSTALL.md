@@ -35,7 +35,7 @@ python3 ~/.claude/claude-handoff/install.py --dry-run
 - If it says `~/.claude/commands/handoff.md already exists and was not installed by this project`: **Ask the user** whether to replace it (the original will be backed up). If yes, add `--force` in step 5; if no, stop.
 - Tell the user in one sentence which hooks will be registered: "Three hooks go into settings.json: one picks up the handoff when a new conversation starts, the other checks context usage after each message and each tool call."
 
-## 4. Ask the user two things (in one message)
+## 4. Ask the user three things (in one message)
 
 1. **How long should transcripts be kept?** By default Claude Code deletes local transcripts (plain-text .jsonl files under `~/.claude/projects/`) after 30 days. A handoff keeps only a summary and the last 5 messages verbatim; the full details live in the transcripts. Recommend 3650 days (about 10 years); the cost is disk space and plain-text transcripts staying on the machine longer.
    - Yes → add `--cleanup-days 3650` in step 5
@@ -43,6 +43,8 @@ python3 ~/.claude/claude-handoff/install.py --dry-run
 2. **Is the context window 200k or 1M?** Ask the user to run `/context` in any session and read the total.
    - 1M → add `--window 1000000` in step 5
    - 200k or unsure → add nothing. The reminder hook assumes 200k and switches a model to 1M automatically once its usage passes 200k.
+3. **Resume without `/clear`?** An optional plugin (handoff-compact): after `/handoff`, it compacts the conversation once with the handoff file's full text in place of the summary, then says "continue" by itself, so the user types nothing. Their own `/compact` and auto-compaction are unaffected. Tested on macOS in both the Claude desktop app and the terminal CLI.
+   - Yes → do step 5b
 
 ## 5. Install
 
@@ -51,6 +53,16 @@ If the user is talking to you in Chinese, also add `--lang zh` (the context remi
 ```bash
 python3 ~/.claude/claude-handoff/install.py [--force] [--cleanup-days 3650] [--window 1000000] [--lang zh]
 ```
+
+## 5b. Install the plugin (only if the user said yes in step 4)
+
+```bash
+claude plugin test ~/.claude/claude-handoff/mods/handoff-compact
+claude plugin marketplace add ~/.claude/claude-handoff
+claude plugin install handoff-compact@claude-handoff
+```
+
+The test must end with `0 fail`. Both later commands are safe to rerun ("already on disk" / "already installed" is fine). The plugin loads from the cloned folder, so a later `git pull` updates it too.
 
 ## 6. Verify
 
@@ -62,6 +74,8 @@ python3 -c "import json,os;h=json.load(open(os.path.expanduser('~/.claude/settin
 
 The second command must print 1 each for `SessionStart`, `UserPromptSubmit` and `PostToolUse`.
 
+If step 5b ran: `claude plugin list 2>&1 | grep -A3 handoff-compact@` must show `Status: ✔ enabled`.
+
 ## 7. Tell the user
 
 Tell the user the following, in their language:
@@ -70,6 +84,7 @@ Tell the user the following, in their language:
 > 1. When context usage reaches 60% and 80%, you'll get a reminder (a line saying "Context xx% used").
 > 2. Type `/handoff` and wait for the handoff file to be written.
 > 3. Type `/clear`, then say "continue" (in any language). That's it.
+>    (With the plugin from step 5b: skip this step. `/handoff` compacts and carries on by itself.)
 >
 > Every handoff is archived in `~/.claude/handoff-history/`. To look up an old decision later, just ask me.
 > To update: ask me to follow this INSTALL.md again. To uninstall: see "Uninstall" in the README.

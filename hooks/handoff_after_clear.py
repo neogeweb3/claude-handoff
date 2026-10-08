@@ -6,6 +6,10 @@ Two modes:
       Called as the last step of /handoff:
       1. leaves a pointer for the directory the handoff belongs to;
       2. copies this version into ~/.claude/handoff-history/ (append-only) and adds a line to index.tsv.
+  python3 ~/.claude/hooks/handoff_after_clear.py --mark <absolute path> --archive-only
+      Used when the handoff-compact mod resumes in place (compact_now): archives only, leaves no pointer,
+      and removes any old pointer for that directory. The mod already puts the handoff into the context;
+      a pointer left behind would inject this handoff again into an unrelated new conversation within 24h.
   (SessionStart hook, registered in settings.json without a matcher; reads the hook input from stdin)
       Runs when a new conversation starts. If the source is clear or startup and the current directory
       has an unused pointer younger than 24 hours, it injects where the handoff is and how to resume,
@@ -103,15 +107,20 @@ def archive(path, owner):
     return dest
 
 
-def mark(path):
+def mark(path, pointer=True):
     path = os.path.realpath(path)
     if not os.path.isfile(path):
         sys.exit("Handoff file not found: %s" % path)
     os.makedirs(DIR, exist_ok=True)
     owner = owner_dir(path)
     p = pointer_for(owner)
-    json.dump({"handoff": path, "cwd": owner, "written_at": time.time()}, open(p, "w"), ensure_ascii=False)
-    print("Pointer saved: in %s, type /clear and then say continue to resume from %s (pointer: %s)" % (owner, path, p))
+    if pointer:
+        json.dump({"handoff": path, "cwd": owner, "written_at": time.time()}, open(p, "w"), ensure_ascii=False)
+        print("Pointer saved: in %s, type /clear and then say continue to resume from %s (pointer: %s)" % (owner, path, p))
+    else:
+        if os.path.exists(p):
+            os.remove(p)
+        print("No pointer left (resuming in place); any old pointer for %s was removed" % owner)
     try:
         print("Archived: %s" % archive(path, owner))
     except Exception as e:  # a failed archive must not block the pointer, but it must be visible
@@ -176,6 +185,8 @@ if __name__ == "__main__":
     try:
         if len(sys.argv) == 3 and sys.argv[1] == "--mark":
             mark(sys.argv[2])
+        elif len(sys.argv) == 4 and sys.argv[1] == "--mark" and sys.argv[3] == "--archive-only":
+            mark(sys.argv[2], pointer=False)
         else:
             on_session_start()
     except SystemExit:

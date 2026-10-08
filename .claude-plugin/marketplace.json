@@ -1,0 +1,6 @@
+{
+  "name": "claude-handoff",
+  "description": "Session handoffs for Claude Code",
+  "owner": { "name": "neogeweb3" },
+  "plugins": [{ "name": "handoff-compact", "source": "./mods/handoff-compact" }]
+}

@@ -75,7 +75,7 @@ You cannot see your own context percentage. **Do not estimate it**; an estimate 
 **Do exactly three steps and nothing else** (no git log, no scan, no memory updates, no self-review):
 1. **One Write** of the handoff file. Target: `HANDOFF.md` if it does not exist or you already know it belongs to this line of work; otherwise `HANDOFF-<yyyymmdd-hhmm>.md` next to it (never overwrite a handoff you have not confirmed is yours). Order: §9 (copy the last 5 user messages straight from your context; this is the one thing that is gone once context is lost) → §0 → §1 → §2 → §4 → whatever else fits.
 2. **One commit command** (inside a git repo): `git add <handoff file> && git commit -m "handoff V<N>"`.
-3. **One command to leave the pointer and archive**: `python3 ~/.claude/hooks/handoff_after_clear.py --mark <absolute path to the handoff file>`, then tell the user: "type /clear, then say continue".
+3. **One command to leave the pointer and archive**: `python3 ~/.claude/hooks/handoff_after_clear.py --mark <absolute path to the handoff file>`, then tell the user: "type /clear, then say continue". If `mcp__handoff-compact__compact_now` is in your tool list, take the mod route in "Last step" instead (`--mark ... --archive-only`, then `compact_now`).
 
 **Before writing §10, look at the start of your own context**: if it begins with a summary block like "This session is being continued from a previous conversation…", compaction has already happened. §10 says **fidelity low** and "this file is based on a compaction summary", and the raw transcript path goes into the first line of §2: `~/.claude/projects/<dir>/<sessionId>.jsonl`. **Never write "no compaction notice seen" without having looked.**
 
@@ -260,7 +260,7 @@ One `<claim> | verify: <cmd>` per line:
 - [ ] §6b has entries or says "None"
 - [ ] §10 has the transcript path
 - [ ] Committed, if inside a git repo
-- [ ] Ran `--mark` (pointer + archive) and told the user "type /clear, then say continue"
+- [ ] Ran `--mark` (pointer + archive) and told the user "type /clear, then say continue"; or, with the mod, ran `--mark ... --archive-only` and called `compact_now` last
 
 **Hygiene**:
 - [ ] Search for `<placeholder>` / `<TODO>` / lines ending in `...` → **0 hits**
@@ -282,16 +282,24 @@ Do the 5 items in §0 match the first item of §1, the first item of §2, §3 an
 
 If any step fails, fix the file and rerun all four steps until they pass.
 
-## Last step: commit, archive, leave the pointer
+## Last step: commit, archive, then resume
 
 🚨 **Skipping this means the handoff was not delivered.**
 
 1. **Inside a git repo, commit**: `git add <handoff file> && git commit -m "handoff V<N>"`.
-2. **Leave the pointer and archive**: `python3 ~/.claude/hooks/handoff_after_clear.py --mark <absolute path to the handoff file>`.
+2. **If your tool list has `mcp__handoff-compact__compact_now`** (the optional handoff-compact mod is installed), resume in place:
+   1. `python3 ~/.claude/hooks/handoff_after_clear.py --mark <absolute path to the handoff file> --archive-only` (archives this version; leaves no pointer, because nothing needs picking up later).
+   2. Call `compact_now` with `path` = the handoff file's absolute path.
+   3. Reply with one sentence: "Handoff V<N> written; compacting now and carrying on." End the turn there and call no other tool.
+
+   When the turn ends, the mod compacts the conversation once, with the handoff file's full text in place of the summary, then sends "continue" by itself. The user types nothing. **Skip steps 3–4 below.**
+
+   **Otherwise** (no such tool), continue with steps 3–4 below.
+3. **Leave the pointer and archive**: `python3 ~/.claude/hooks/handoff_after_clear.py --mark <absolute path to the handoff file>`.
    It does two things:
    - Leaves a one-time pointer for the handoff's directory (valid for 24 hours, keyed by directory, never leaks into another project).
    - Copies this version into `~/.claude/handoff-history/`, append-only, and adds a line to `index.tsv` (time, version, directory, task).
-3. Tell the user in one sentence where the handoff was written and which version it is, then: "Type `/clear`, then say continue, and we pick up from here. Nothing to copy."
+   Then tell the user in one sentence where the handoff was written and which version it is, then: "Type `/clear`, then say continue, and we pick up from here. Nothing to copy."
 4. **Do not paste §11**. When the new conversation starts, the SessionStart hook injects the handoff path plus the text of §0 and §11 automatically.
    If it did not pick up, check `~/.claude/handoff-pointers/hook.log` first.
    ⚠️ In the desktop app, `/clear` reaches the hook as source `startup`, not `clear`; the hook accepts both.

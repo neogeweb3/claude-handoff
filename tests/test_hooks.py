@@ -97,6 +97,15 @@ class AfterClear(Base):
         run(AFTER_CLEAR, ["--mark", p], home=self.home, cwd=self.work)
         self.assertIn("Reply to the user in the language they write in", self.session_start().stdout)
 
+    def test_archive_only_leaves_no_pointer_and_clears_old_one(self):
+        old = self.write_handoff(1)
+        run(AFTER_CLEAR, ["--mark", old], home=self.home, cwd=self.work)
+        p = self.write_handoff(2)
+        r = run(AFTER_CLEAR, ["--mark", p, "--archive-only"], home=self.home, cwd=self.work)
+        self.assertIn("Archived", r.stdout)
+        self.assertNotIn("Pointer saved", r.stdout)
+        self.assertEqual(self.session_start("startup").stdout, "", "resumed in place: nothing to inject later")
+
     def test_other_source_keeps_pointer(self):
         p = self.write_handoff(1)
         run(AFTER_CLEAR, ["--mark", p], home=self.home, cwd=self.work)
@@ -169,6 +178,7 @@ class Reminder(Base):
         en = self.fire(125_000, sid="en")
         self.assertIn("Context 62% used", en["systemMessage"])
         self.assertIn("Reply to the user in the language they write in", en["hookSpecificOutput"]["additionalContext"])
+        self.assertIn("compact_now", en["hookSpecificOutput"]["additionalContext"], "with the mod, no /clear")
         zh = self.fire(125_000, sid="zh", env={"CLAUDE_HANDOFF_LANG": "zh"})
         self.assertIn("62%", zh["systemMessage"])
         self.assertNotIn("Context", zh["systemMessage"])

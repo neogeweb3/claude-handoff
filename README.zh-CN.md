@@ -33,6 +33,7 @@ context 到 60% / 80%  →  自动提醒
 | `commands/handoff_scan.py` | `~/.claude/commands/` | 写交接前，从对话记录里把你的全部消息和所有「没做 / 没核」的句子拉出来，防漏 |
 | `hooks/context_usage_reminder.py` | `~/.claude/hooks/` | 每次发消息、每次工具调用后，从对话记录算 context 用量，到 60% / 80% 各提醒一次 |
 | `hooks/handoff_after_clear.py` | `~/.claude/hooks/` | `/handoff` 写完时留一个指针并存档；`/clear` 后新对话开始时，把交接的要点自动塞进新对话 |
+| `mods/handoff-compact/` | 作为插件安装（可选） | 省掉 `/clear` 和「继续」：`/handoff` 写完后压缩一次，摘要换成交接文件全文，然后自己接着干。见下文 |
 
 两个 hook 登记在 `~/.claude/settings.json`。
 
@@ -44,11 +45,36 @@ context 到 60% / 80%  →  自动提醒
 读 https://github.com/neogeweb3/claude-handoff/blob/main/INSTALL.md ，照着帮我装上。
 ```
 
-它会：拉代码 → 跑测试 → 预演 → 问你两个问题（对话记录保留多久、context 窗口多大）→ 安装 → 自检。装完**新开一个会话**生效。
+它会：拉代码 → 跑测试 → 预演 → 问你三个问题（对话记录保留多久、context 窗口多大、要不要装免 /clear 的插件）→ 安装 → 自检。装完**新开一个会话**生效。
 
 只支持 macOS / Linux（需要 `python3`）。INSTALL.md 是写给 Claude 看的，用英文写；Claude 会用你的语言跟你说话。
 
 交接文件用你跟 Claude 对话的语言写；你的原话原样保留。Claude 也会用你的语言回话。hook 直接显示在界面上的只有一行（context 用量提醒），默认英文，装的时候加 `--lang zh` 就是中文；你用中文跟 Claude 说话时，安装会自动加上。
+
+## 可选：不用 /clear 也能接上（handoff-compact 插件）
+
+装了这个插件，`/handoff` 最后会把对话压缩一次，**摘要换成交接文件的全文**（不是模型重写的摘要），然后自己发一句「继续」。你什么都不用打，同一个会话按交接接着干。
+
+```
+     /handoff   →  写 HANDOFF.md、存档，然后压缩，摘要换成交接全文
+                   → 自动发「继续」→ 接着干
+```
+
+你自己打的 `/compact` 和 Claude Code 的自动压缩都不受影响，插件只接手 `/handoff` 要求的那一次。压缩没做成时会弹提示，告诉你打 `/clear` 再让 Claude 读交接文件。
+
+INSTALL.md 会问你要不要装。手动装就在 Claude Code 输入框里打：
+
+```
+/plugin install handoff-compact --marketplace neogeweb3/claude-handoff
+```
+
+或者在 shell 里装（桌面版也适用）：
+
+```bash
+claude plugin marketplace add neogeweb3/claude-handoff && claude plugin install handoff-compact@claude-handoff
+```
+
+在 macOS 上实测过：Claude 桌面版（Code 标签）和终端命令行版都跑通了。
 
 ## 交接了 200 次，以前的细节还找得到吗
 
@@ -97,12 +123,18 @@ python3 ~/.claude/hooks/context_usage_reminder.py --probe <对话记录.jsonl>
 rm ~/.claude/commands/handoff.md ~/.claude/commands/handoff_scan.py ~/.claude/hooks/handoff_after_clear.py ~/.claude/hooks/context_usage_reminder.py
 ```
 
+3. 装过插件的话：`claude plugin uninstall handoff-compact@claude-handoff`。
+
 `~/.claude/handoff-history/` 里是你的交接存档，要不要删你自己定。
 
 ## 开发
 
 ```bash
 python3 tests/test_hooks.py
+```
+
+```bash
+claude plugin test mods/handoff-compact
 ```
 
 测试都在临时目录里跑，不碰真实的 `~/.claude`。

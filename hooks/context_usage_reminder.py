@@ -131,7 +131,9 @@ def main():
         "[Context usage reminder · hook] The last request used about %s tokens, %d%% of a %s window, past the %d%% line "
         "(computed from input+cache tokens in the transcript, not estimated; you can quote this number).%s "
         "The convention is to hand off at 60%% and treat compaction only as a fallback: when you finish the step "
-        "you are on, suggest in one sentence that the user run /handoff now, then /clear and say continue. "
+        "you are on, suggest in one sentence that the user run /handoff now. If your tool list has "
+        "mcp__handoff-compact__compact_now, /handoff compacts and carries on by itself, so do not mention /clear; "
+        "otherwise add: then /clear and say continue. "
         "If the user says no, keep working. Reply to the user in the language they write in. %s"
         % (k(ctx), pct, k(window), line, note,
            ("There will be one more reminder at %d%%." % later[0]) if later else "No more reminders this session.")

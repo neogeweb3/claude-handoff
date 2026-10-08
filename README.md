@@ -33,6 +33,7 @@ What the handoff does instead:
 | `commands/handoff_scan.py` | `~/.claude/commands/` | Before writing, pulls all your messages and every "not done / not verified" sentence out of the transcript so nothing slips |
 | `hooks/context_usage_reminder.py` | `~/.claude/hooks/` | After each message and tool call, computes context usage from the transcript; reminds once at 60% and once at 80% |
 | `hooks/handoff_after_clear.py` | `~/.claude/hooks/` | When `/handoff` finishes, leaves a pointer and archives the handoff; after `/clear`, injects the handoff's key points into the new conversation |
+| `mods/handoff-compact/` | installed as a plugin (optional) | Skips `/clear` and "continue": after `/handoff`, compacts once with the handoff file as the summary and carries on by itself. See below |
 
 Both hooks are registered in `~/.claude/settings.json`.
 
@@ -44,11 +45,36 @@ Send this to Claude Code:
 Read https://github.com/neogeweb3/claude-handoff/blob/main/INSTALL.md and install it for me.
 ```
 
-It will clone the repo, run the tests, do a dry run, ask you two questions (how long to keep transcripts, how big your context window is), install, and verify. The hooks take effect in a **new session**.
+It will clone the repo, run the tests, do a dry run, ask you three questions (how long to keep transcripts, how big your context window is, whether to add the no-/clear plugin), install, and verify. The hooks take effect in a **new session**.
 
 macOS and Linux only (needs `python3`). INSTALL.md is written for Claude, in English; Claude will talk to you in your own language.
 
 The handoff is written in the language you use with Claude; your own messages are kept exactly as you wrote them. Claude replies in your language too. The one line the hooks show directly in the UI (the context reminder) is in English, or in Chinese if you install with `--lang zh`; the installer picks that automatically when you talk to Claude in Chinese.
+
+## Optional: resume without /clear (handoff-compact mod)
+
+With this plugin installed, `/handoff` ends by compacting the conversation once, with **the handoff file's full text in place of the usual summary**, and then sends "continue" by itself. You type nothing; the same session picks up from the handoff.
+
+```
+     /handoff   →  writes HANDOFF.md, archives it, then compacts with the handoff as the summary
+                   → "continue" is sent automatically → carries on
+```
+
+Your own `/compact` and Claude Code's auto-compaction are untouched; the mod only steps in for the one compaction `/handoff` asks for. If it cannot compact, a notice tells you to `/clear` and ask Claude to read the handoff file.
+
+INSTALL.md asks whether you want it. To install it by hand, type this at the Claude Code prompt:
+
+```
+/plugin install handoff-compact --marketplace neogeweb3/claude-handoff
+```
+
+Or from a shell (works for the desktop app too):
+
+```bash
+claude plugin marketplace add neogeweb3/claude-handoff && claude plugin install handoff-compact@claude-handoff
+```
+
+Tested on macOS in the Claude desktop app (Code tab) and in the terminal CLI.
 
 ## After 200 handoffs, can I still find old details?
 
@@ -97,12 +123,18 @@ python3 ~/.claude/hooks/context_usage_reminder.py --probe <transcript.jsonl>
 rm ~/.claude/commands/handoff.md ~/.claude/commands/handoff_scan.py ~/.claude/hooks/handoff_after_clear.py ~/.claude/hooks/context_usage_reminder.py
 ```
 
+3. If you installed the mod: `claude plugin uninstall handoff-compact@claude-handoff`.
+
 `~/.claude/handoff-history/` holds your archived handoffs; delete it or keep it, your call.
 
 ## Development
 
 ```bash
 python3 tests/test_hooks.py
+```
+
+```bash
+claude plugin test mods/handoff-compact
 ```
 
 Tests run in a temporary directory and never touch the real `~/.claude`.
