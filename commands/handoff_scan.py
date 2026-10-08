@@ -33,6 +33,10 @@ FLAG = re.compile(
     re.I)
 SPLIT = re.compile(r"(?<=[。！？!?])|(?<=\.)\s+|\n")
 REMINDER = re.compile(r"^\s*(<system-reminder>.*?</system-reminder>\s*)+", re.S)
+# Tags Claude Code itself puts in user-role entries (slash commands, ! shell input, tool views, etc.).
+# Anything else starting with "<" is the user's own text (e.g. pasted HTML, "<!-- ... -->").
+SYSTEM_TAG = re.compile(r"^<(?:command-[a-z]+|bash-[a-z]+|local-command-[a-z]+|artifact-[a-z-]+|"
+                        r"cross-session-message|user-prompt-submit-hook)\b")
 
 
 def flagged(text):
@@ -84,13 +88,13 @@ def main():
             t = REMINDER.sub("", texts(c)).strip()   # the first message is often wrapped in system reminders
             if "<task-notification>" in t:
                 agents += [(ts, n, s) for s in flagged(t)]
-            elif t and (not t.startswith("<") or t.startswith("<pasted_content")):   # pasted content is the user's too
+            elif t and not SYSTEM_TAG.match(t):
                 user.append((ts, n, t))
         elif att.get("type") == "queued_command" and att.get("prompt"):
             t = str(att["prompt"]).strip()           # background task notifications also arrive this way
             if "<task-notification>" in t:
                 agents += [(ts, n, s) for s in flagged(t)]
-            elif not t.startswith("<"):
+            elif t and not SYSTEM_TAG.match(t):
                 user.append((ts, n, "(queued) " + t))
         elif r.get("type") == "assistant":
             mine += [(ts, n, s) for s in flagged(texts(c))]
@@ -98,8 +102,8 @@ def main():
     def dedup(rows):
         seen, out = set(), []
         for ts, n, s in rows:
-            if len(s) >= 6 and s[:60] not in seen:
-                seen.add(s[:60])
+            if len(s) >= 2 and s not in seen:
+                seen.add(s)
                 out.append((ts, n, s))
         return out
 

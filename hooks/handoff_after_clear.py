@@ -132,6 +132,10 @@ def on_session_start():
     ptr = json.load(open(p))
     if ptr.get("consumed_at"):
         return
+    if ptr.get("cwd") and os.path.realpath(ptr["cwd"]) != os.path.realpath(cwd):
+        # pointer file names are lossy (/ . _ all become -): never hand one project's handoff to another
+        log("skip pointer belongs to %s | cwd=%s" % (ptr["cwd"], cwd))
+        return
     env = "entrypoint=%s attended=%s" % (os.environ.get("CLAUDE_CODE_ENTRYPOINT", "-"),
                                           os.environ.get("CLAUDE_CODE_SESSION_ATTENDED", "-"))
     if source not in SOURCES:

@@ -24,6 +24,7 @@ import argparse
 import filecmp
 import json
 import os
+import shlex
 import shutil
 import sys
 import time
@@ -31,6 +32,7 @@ import time
 SRC = os.path.dirname(os.path.abspath(__file__))
 CLAUDE = os.path.expanduser("~/.claude")
 STAMP = time.strftime("%Y%m%d-%H%M%S")
+DEFAULT_CLEANUP_DAYS = 30   # Claude Code's default when cleanupPeriodDays is unset
 MARKER = "claude-handoff"   # present in our handoff.md description; identifies our own install
 FILES = [
     ("commands/handoff.md", "commands/handoff.md"),
@@ -41,7 +43,7 @@ FILES = [
 
 
 def hook_cmd(name):
-    return "python3 %s" % os.path.join(CLAUDE, "hooks", name)
+    return "python3 %s" % shlex.quote(os.path.join(CLAUDE, "hooks", name))
 
 
 HOOKS = [
@@ -98,8 +100,9 @@ def update_settings(dry, cleanup_days, window):
             say(dry, "register hook: %s -> %s" % (event, cmd))
     if cleanup_days:
         cur = settings.get("cleanupPeriodDays")
-        if isinstance(cur, int) and cur >= cleanup_days:
-            say(dry, "cleanupPeriodDays is already %d, unchanged" % cur)
+        effective = cur if isinstance(cur, int) else DEFAULT_CLEANUP_DAYS
+        if effective >= cleanup_days:
+            say(dry, "cleanupPeriodDays is already %d%s, unchanged" % (effective, "" if isinstance(cur, int) else " (default)"))
         else:
             settings["cleanupPeriodDays"] = cleanup_days
             say(dry, "cleanupPeriodDays: %s -> %d" % (cur if cur is not None else "unset (default 30)", cleanup_days))
@@ -130,6 +133,8 @@ def main():
     ap.add_argument("--cleanup-days", type=int, default=0)
     ap.add_argument("--window", type=int, default=0)
     a = ap.parse_args()
+    if a.cleanup_days < 0 or a.window < 0:
+        ap.error("--cleanup-days and --window must be positive")
     copy_files(a.dry_run, a.force)
     update_settings(a.dry_run, a.cleanup_days, a.window)
     if not a.dry_run:

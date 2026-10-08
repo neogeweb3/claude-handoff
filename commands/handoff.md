@@ -73,9 +73,9 @@ You cannot see your own context percentage. **Do not estimate it**; an estimate 
 **Precondition: long commands run in the background.** Anything expected to take more than 30 seconds (network transfers, remote scans, long test runs) must run in the background, otherwise the user's message and Interrupt cannot reach you until it finishes.
 
 **Do exactly three steps and nothing else** (no git log, no scan, no memory updates, no self-review):
-1. **One Write** of HANDOFF.md. Order: §9 (copy the last 5 user messages straight from your context; this is the one thing that is gone once context is lost) → §0 → §1 → §2 → §4 → whatever else fits.
-2. **One commit command** (inside a git repo): `git add HANDOFF.md && git commit -m "handoff V<N>"`.
-3. **One command to leave the pointer and archive**: `python3 ~/.claude/hooks/handoff_after_clear.py --mark <absolute path to HANDOFF>`, then tell the user: "type /clear, then say continue".
+1. **One Write** of the handoff file. Target: `HANDOFF.md` if it does not exist or you already know it belongs to this line of work; otherwise `HANDOFF-<yyyymmdd-hhmm>.md` next to it (never overwrite a handoff you have not confirmed is yours). Order: §9 (copy the last 5 user messages straight from your context; this is the one thing that is gone once context is lost) → §0 → §1 → §2 → §4 → whatever else fits.
+2. **One commit command** (inside a git repo): `git add <handoff file> && git commit -m "handoff V<N>"`.
+3. **One command to leave the pointer and archive**: `python3 ~/.claude/hooks/handoff_after_clear.py --mark <absolute path to the handoff file>`, then tell the user: "type /clear, then say continue".
 
 **Before writing §10, look at the start of your own context**: if it begins with a summary block like "This session is being continued from a previous conversation…", compaction has already happened. §10 says **fidelity low** and "this file is based on a compaction summary", and the raw transcript path goes into the first line of §2: `~/.claude/projects/<dir>/<sessionId>.jsonl`. **Never write "no compaction notice seen" without having looked.**
 

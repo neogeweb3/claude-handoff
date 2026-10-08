@@ -97,6 +97,21 @@ class AfterClear(Base):
         self.assertEqual(self.session_start("resume").stdout, "")
         self.assertIn("§0 text", self.session_start("clear").stdout)
 
+    def test_pointer_never_crosses_to_lookalike_directory(self):
+        """project-one and project_one map to the same pointer file name; the handoff must not cross over."""
+        other = os.path.join(self.home, "proj_x")
+        mine = os.path.join(self.home, "proj-x")
+        os.makedirs(other)
+        os.makedirs(mine)
+        p = os.path.join(mine, "HANDOFF.md")
+        with open(p, "w", encoding="utf-8") as f:
+            f.write(HANDOFF.format(v=1))
+        run(AFTER_CLEAR, ["--mark", p], home=self.home, cwd=mine)
+        stdin = json.dumps({"source": "startup", "cwd": other, "session_id": "s1"})
+        self.assertEqual(run(AFTER_CLEAR, stdin=stdin, home=self.home, cwd=other).stdout, "")
+        stdin = json.dumps({"source": "startup", "cwd": mine, "session_id": "s2"})
+        self.assertIn("§0 text", run(AFTER_CLEAR, stdin=stdin, home=self.home, cwd=mine).stdout)
+
     def test_every_version_archived_and_greppable(self):
         """The 200-handoffs question: the main file is overwritten, old versions must stay archived and greppable."""
         for v in range(1, 6):
@@ -178,6 +193,35 @@ class Scan(Base):
         self.assertNotIn("Next I will deploy", r.stdout, "only the flagged sentence, not the whole message")
 
 
+class ScanCompleteness(Base):
+    def scan(self, lines):
+        d = os.path.join(self.home, ".claude", "projects", "x")
+        os.makedirs(d)
+        with open(os.path.join(d, "x.jsonl"), "w", encoding="utf-8") as f:
+            f.write("\n".join(json.dumps(dict(l, cwd=self.work), ensure_ascii=False, separators=(",", ":")) for l in lines))
+        r = run(SCAN, home=self.home, cwd=self.work)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        return r.stdout
+
+    def test_short_and_same_prefix_sentences_are_kept(self):
+        prefix = "The migration script is written and it handles every table we listed except "
+        out = self.scan([{"type": "assistant", "message": {"content": [{"type": "text", "text":
+              "Untested. " + prefix + "orders, not verified. " + prefix + "users, not verified."}]}}])
+        part2 = out.split("## 2.")[1]
+        self.assertIn("Untested.", part2)
+        self.assertIn("orders, not verified", part2)
+        self.assertIn("users, not verified", part2)
+
+    def test_user_text_starting_with_angle_bracket_is_kept(self):
+        out = self.scan([
+            {"type": "user", "message": {"content": "<!-- reply --> ship it"}},
+            {"type": "user", "message": {"content": "<command-name>/handoff</command-name>"}},
+        ])
+        part1 = out.split("## 2.")[0]
+        self.assertIn("ship it", part1)
+        self.assertNotIn("command-name", part1)
+
+
 class ScanChinese(Base):
     def test_flags_chinese_sentences_too(self):
         d = os.path.join(self.home, ".claude", "projects", "x")
@@ -212,6 +256,21 @@ class Install(Base):
         self.assertIn("echo mine", cmds)
         self.assertEqual(len(s["hooks"]["PostToolUse"]), 1)
         self.assertTrue(os.path.isfile(os.path.join(self.home, ".claude", "commands", "handoff.md")))
+
+    def test_never_lowers_default_retention(self):
+        r = run(INSTALL, ["--cleanup-days", "7"], home=self.home)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertNotIn("cleanupPeriodDays", self.settings())
+
+    def test_hook_paths_with_spaces_are_quoted(self):
+        spaced = os.path.join(self.home, "with space")
+        os.makedirs(spaced)
+        r = run(INSTALL, home=spaced)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        with open(os.path.join(spaced, ".claude", "settings.json"), encoding="utf-8") as f:
+            cmd = json.load(f)["hooks"]["SessionStart"][0]["hooks"][0]["command"]
+        import shlex
+        self.assertEqual(shlex.split(cmd)[1], os.path.join(spaced, ".claude", "hooks", "handoff_after_clear.py"))
 
     def test_refuses_foreign_handoff_without_force(self):
         d = os.path.join(self.home, ".claude", "commands")
