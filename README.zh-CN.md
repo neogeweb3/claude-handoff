@@ -21,7 +21,7 @@ context 到 60% / 80%  →  自动提醒
 
 交接文件的做法：
 - **结构化**：任务、卡点、别再走的路、决定和理由、状态、改动清单，各有固定位置。
-- **原话保留**：最近 5 条用户消息逐字复制，不转述。
+- **原话保留**：你最近 5 条消息逐字复制，不转述。
 - **每条可验证**：状态类的声明都附一条能直接跑的验证命令。
 - **接手时强制复述**：新对话先逐字复述 5 个要点，再动手（医疗交班协议 I-PASS 的做法）。
 
@@ -41,12 +41,12 @@ context 到 60% / 80%  →  自动提醒
 把下面这句话发给 Claude Code：
 
 ```
-读 https://github.com/neogeweb3/claude-handoff/blob/main/INSTALL.md ，照着帮我装上，全程用中文跟我说。
+读 https://github.com/neogeweb3/claude-handoff/blob/main/INSTALL.md ，照着帮我装上。
 ```
 
 它会：拉代码 → 跑测试 → 预演 → 问你两个问题（对话记录保留多久、context 窗口多大）→ 安装 → 自检。装完**新开一个会话**生效。
 
-只支持 macOS / Linux（需要 `python3`）。安装说明 INSTALL.md 是写给 Claude 看的英文文档，Claude 跟你说话时会用中文。
+只支持 macOS / Linux（需要 `python3`）。INSTALL.md 是写给 Claude 看的，用英文写；Claude 会用你的语言跟你说话。
 
 交接文件用你跟 Claude 对话的语言写；你的原话原样保留。
 
@@ -112,4 +112,6 @@ python3 tests/test_hooks.py
 - 上下文用量提醒借鉴了 [gsd-build/get-shit-done](https://github.com/gsd-build/get-shit-done) 的 `hooks/gsd-context-monitor.js`。
 - 原话保留的做法来自 [OpenAI Codex 的 compact.rs](https://github.com/openai/codex/blob/main/codex-rs/core/src/compact.rs)。
 
-MIT License
+## 许可证
+
+MIT

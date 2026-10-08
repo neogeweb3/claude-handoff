@@ -46,7 +46,7 @@ Read https://github.com/neogeweb3/claude-handoff/blob/main/INSTALL.md and instal
 
 It will clone the repo, run the tests, do a dry run, ask you two questions (how long to keep transcripts, how big your context window is), install, and verify. The hooks take effect in a **new session**.
 
-macOS and Linux only (needs `python3`).
+macOS and Linux only (needs `python3`). INSTALL.md is written for Claude, in English; Claude will talk to you in your own language.
 
 The handoff is written in the language you use with Claude; your own messages are kept exactly as you wrote them.
 
