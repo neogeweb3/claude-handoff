@@ -48,7 +48,7 @@ It will clone the repo, run the tests, do a dry run, ask you two questions (how 
 
 macOS and Linux only (needs `python3`). INSTALL.md is written for Claude, in English; Claude will talk to you in your own language.
 
-The handoff is written in the language you use with Claude; your own messages are kept exactly as you wrote them.
+The handoff is written in the language you use with Claude; your own messages are kept exactly as you wrote them. Claude replies in your language too. The one line the hooks show directly in the UI (the context reminder) is in English, or in Chinese if you install with `--lang zh`; the installer picks that automatically when you talk to Claude in Chinese.
 
 ## After 200 handoffs, can I still find old details?
 

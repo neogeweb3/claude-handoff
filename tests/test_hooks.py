@@ -91,6 +91,11 @@ class AfterClear(Base):
         self.assertIn("Read handoff V1", first)
         self.assertEqual(self.session_start("clear").stdout, "", "a pointer is used once")
 
+    def test_injection_tells_claude_to_reply_in_user_language(self):
+        p = self.write_handoff(1)
+        run(AFTER_CLEAR, ["--mark", p], home=self.home, cwd=self.work)
+        self.assertIn("Reply to the user in the language they write in", self.session_start().stdout)
+
     def test_other_source_keeps_pointer(self):
         p = self.write_handoff(1)
         run(AFTER_CLEAR, ["--mark", p], home=self.home, cwd=self.work)
@@ -158,6 +163,14 @@ class Reminder(Base):
         self.assertIn("Window assumed to be 200k", out["hookSpecificOutput"]["additionalContext"])
         self.assertIsNone(self.fire(130_000), "60% fires only once")
         self.assertIn("past the 80% line", self.fire(165_000)["hookSpecificOutput"]["additionalContext"])
+
+    def test_ui_line_follows_lang_and_claude_is_told_to_match_user(self):
+        en = self.fire(125_000, sid="en")
+        self.assertIn("Context 62% used", en["systemMessage"])
+        self.assertIn("Reply to the user in the language they write in", en["hookSpecificOutput"]["additionalContext"])
+        zh = self.fire(125_000, sid="zh", env={"CLAUDE_HANDOFF_LANG": "zh"})
+        self.assertIn("62%", zh["systemMessage"])
+        self.assertNotIn("Context", zh["systemMessage"])
 
     def test_learns_1m_window_per_model(self):
         self.fire(250_000, model="big")                     # over 200k -> this model has a 1M window
@@ -271,6 +284,11 @@ class Install(Base):
             cmd = json.load(f)["hooks"]["SessionStart"][0]["hooks"][0]["command"]
         import shlex
         self.assertEqual(shlex.split(cmd)[1], os.path.join(spaced, ".claude", "hooks", "handoff_after_clear.py"))
+
+    def test_lang_flag_sets_env(self):
+        self.assertEqual(run(INSTALL, ["--lang", "zh"], home=self.home).returncode, 0)
+        self.assertEqual(self.settings()["env"]["CLAUDE_HANDOFF_LANG"], "zh")
+        self.assertNotEqual(run(INSTALL, ["--lang", "fr"], home=self.home).returncode, 0)
 
     def test_refuses_foreign_handoff_without_force(self):
         d = os.path.join(self.home, ".claude", "commands")

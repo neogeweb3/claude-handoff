@@ -20,6 +20,9 @@ The transcript does not record the window size, so it is resolved in this order:
      and used from then on;
   3. otherwise 200k. A 1M-window user may get an early reminder before the first time a model passes
      200k; the reminder says so.
+The one line shown in the UI (systemMessage) is in English, or in Chinese when CLAUDE_HANDOFF_LANG=zh
+(set by `install.py --lang zh`). The text injected for Claude stays in English and tells it to reply in
+the user's language.
 Any exception exits 0 silently so tool calls are never blocked.
 
 Check current usage by hand: python3 ~/.claude/hooks/context_usage_reminder.py --probe <transcript.jsonl>
@@ -32,6 +35,11 @@ import time
 from pathlib import Path
 
 ENV_WINDOW = int(os.environ.get("CLAUDE_CONTEXT_WINDOW") or 0)
+LANG = (os.environ.get("CLAUDE_HANDOFF_LANG") or "en").lower()
+UI_MESSAGE = {
+    "en": "Context %d%% used (about %s tokens): time to hand off",
+    "zh": "上下文已用 %d%%（约 %s token），该交接了",
+}
 SMALL, LARGE = 200_000, 1_000_000
 THRESHOLDS = (60, 80)
 RESET_BELOW = 40              # after compaction, re-arm once usage drops below this
@@ -124,12 +132,12 @@ def main():
         "(computed from input+cache tokens in the transcript, not estimated; you can quote this number).%s "
         "The convention is to hand off at 60%% and treat compaction only as a fallback: when you finish the step "
         "you are on, suggest in one sentence that the user run /handoff now, then /clear and say continue. "
-        "If the user says no, keep working. %s"
+        "If the user says no, keep working. Reply to the user in the language they write in. %s"
         % (k(ctx), pct, k(window), line, note,
            ("There will be one more reminder at %d%%." % later[0]) if later else "No more reminders this session.")
     )
     out = {
-        "systemMessage": "Context %d%% used (about %s tokens): time to hand off" % (pct, k(ctx)),
+        "systemMessage": UI_MESSAGE.get(LANG[:2], UI_MESSAGE["en"]) % (pct, k(ctx)),
         "hookSpecificOutput": {"hookEventName": event, "additionalContext": context_msg},
     }
     with open(STATE_DIR / "hook.log", "a") as fh:

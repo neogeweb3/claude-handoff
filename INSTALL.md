@@ -46,8 +46,10 @@ python3 ~/.claude/claude-handoff/install.py --dry-run
 
 ## 5. Install
 
+If the user is talking to you in Chinese, also add `--lang zh` (the context reminder line in the UI will then be in Chinese). Do not ask; decide from the language the user is using.
+
 ```bash
-python3 ~/.claude/claude-handoff/install.py [--force] [--cleanup-days 3650] [--window 1000000]
+python3 ~/.claude/claude-handoff/install.py [--force] [--cleanup-days 3650] [--window 1000000] [--lang zh]
 ```
 
 ## 6. Verify

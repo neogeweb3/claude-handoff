@@ -6,6 +6,7 @@
   python3 install.py --cleanup-days 3650          # also keep transcripts for 3650 days
   python3 install.py --window 1000000             # also tell the reminder hook your window is 1M
   python3 install.py --force                      # replace an existing handoff.md that is not ours (backed up first)
+  python3 install.py --lang zh                    # show the context reminder in Chinese
 
 What it does:
   1. Copies files: commands/handoff.md, commands/handoff_scan.py -> ~/.claude/commands/
@@ -17,7 +18,7 @@ What it does:
        SessionStart      -> handoff_after_clear.py (no matcher)
        UserPromptSubmit  -> context_usage_reminder.py
        PostToolUse       -> context_usage_reminder.py
-  3. Optional: cleanupPeriodDays and env.CLAUDE_CONTEXT_WINDOW. Retention is only ever raised,
+  3. Optional: cleanupPeriodDays, env.CLAUDE_CONTEXT_WINDOW and env.CLAUDE_HANDOFF_LANG. Retention is only ever raised,
      never lowered below what you already have.
 """
 import argparse
@@ -81,7 +82,7 @@ def copy_files(dry, force):
             shutil.copy2(src, dst)
 
 
-def update_settings(dry, cleanup_days, window):
+def update_settings(dry, cleanup_days, window, lang=None):
     path = os.path.join(CLAUDE, "settings.json")
     if os.path.exists(path):
         with open(path, encoding="utf-8") as f:
@@ -109,6 +110,9 @@ def update_settings(dry, cleanup_days, window):
     if window:
         settings.setdefault("env", {})["CLAUDE_CONTEXT_WINDOW"] = str(window)
         say(dry, "env.CLAUDE_CONTEXT_WINDOW = %d" % window)
+    if lang:
+        settings.setdefault("env", {})["CLAUDE_HANDOFF_LANG"] = lang
+        say(dry, "env.CLAUDE_HANDOFF_LANG = %s" % lang)
     if json.dumps(settings, sort_keys=True) == before:
         say(dry, "settings.json needs no changes")
         return
@@ -132,11 +136,12 @@ def main():
     ap.add_argument("--force", action="store_true")
     ap.add_argument("--cleanup-days", type=int, default=0)
     ap.add_argument("--window", type=int, default=0)
+    ap.add_argument("--lang", choices=["en", "zh"], help="language of the context reminder shown in the UI")
     a = ap.parse_args()
     if a.cleanup_days < 0 or a.window < 0:
         ap.error("--cleanup-days and --window must be positive")
     copy_files(a.dry_run, a.force)
-    update_settings(a.dry_run, a.cleanup_days, a.window)
+    update_settings(a.dry_run, a.cleanup_days, a.window, a.lang)
     if not a.dry_run:
         print("\nInstalled. The hooks take effect in a new session; /handoff should then be available.")
 

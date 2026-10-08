@@ -160,6 +160,7 @@ def on_session_start():
         lines += ["1. Read the whole file above and follow the opening instruction in §11.",
                   "2. Tell the user in one sentence that you have picked up the handoff (which file, written when), then get to work."]
     lines.append("If the user is asking about something new instead, ignore this handoff.")
+    lines.append("Reply to the user in the language they write in.")
     if s0:
         lines += ["", "§0 text:", s0]
     if s11:

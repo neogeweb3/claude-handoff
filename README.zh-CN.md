@@ -48,7 +48,7 @@ context 到 60% / 80%  →  自动提醒
 
 只支持 macOS / Linux（需要 `python3`）。INSTALL.md 是写给 Claude 看的，用英文写；Claude 会用你的语言跟你说话。
 
-交接文件用你跟 Claude 对话的语言写；你的原话原样保留。
+交接文件用你跟 Claude 对话的语言写；你的原话原样保留。Claude 也会用你的语言回话。hook 直接显示在界面上的只有一行（context 用量提醒），默认英文，装的时候加 `--lang zh` 就是中文；你用中文跟 Claude 说话时，安装会自动加上。
 
 ## 交接了 200 次，以前的细节还找得到吗
 
