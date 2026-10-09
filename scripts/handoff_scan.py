@@ -9,8 +9,8 @@ and reviewed one by one. Replaying with this scan recovered 3 of the 4 missed it
 existed in a data file written by a background agent, not in the transcript.
 
 Usage:
-  python3 ~/.claude/commands/handoff_scan.py              # find the latest transcript for the current directory
-  python3 ~/.claude/commands/handoff_scan.py <file.jsonl>
+  python3 scripts/handoff_scan.py              # find the latest transcript for the current directory
+  python3 scripts/handoff_scan.py <file.jsonl>
 Read-only; changes nothing.
 """
 import glob
