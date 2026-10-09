@@ -17,10 +17,10 @@ What --apply does:
      those two old scripts are removed (an entry left with no hooks, and an event left with no entries,
      are dropped). Everything else is written back unchanged.
   2. The old files are moved (not deleted) into ~/.claude/handoff-migrated-<time>/, keeping their paths.
-     ~/.claude/commands/handoff.md is only moved when it is this project's (it mentions claude-handoff or
-     the HANDOFF_VERSION header); a /handoff command of your own is left where it is.
-  3. handoff-compact@claude-handoff is uninstalled with `claude plugin uninstall`; if that fails, the
-     command is printed for you to run.
+     A file is only moved when it carries one of this project's marks (OLD_FILES below); a file of the same
+     name that is your own, such as your own /handoff command, is left where it is.
+  3. handoff-compact@claude-handoff is uninstalled with `claude plugin uninstall --scope <its scope>`, for
+     each scope it is installed in; if that fails, the command is printed for you to run.
 Handoff archives (~/.claude/handoff-history), pointers and settings such as env.CLAUDE_CONTEXT_WINDOW are
 not touched. Running it again after a successful run finds nothing to do.
 
@@ -29,23 +29,31 @@ handoff-migrated folder, and reinstall handoff-compact if you want it.
 """
 import json
 import os
+import shlex
 import shutil
 import subprocess
 import sys
 import time
 
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.realpath(__file__))), "hooks"))
+from legacy import script_of  # noqa: E402  (the same test the hooks use to recognise an old registration)
+
 CLAUDE = os.path.join(os.path.expanduser("~"), ".claude")
 SETTINGS = os.path.join(CLAUDE, "settings.json")
-OLD_SCRIPTS = ("handoff_after_clear.py", "context_usage_reminder.py")
-OLD_FILES = ("commands/handoff.md", "commands/handoff_scan.py",
-             "hooks/handoff_after_clear.py", "hooks/context_usage_reminder.py")
+# Each old file and strings only this project's versions contain (every released version and the
+# author's own copies were checked); a file without them is someone else's and is left alone.
+OLD_FILES = {
+    "commands/handoff.md": ("claude-handoff", "HANDOFF_VERSION"),
+    "commands/handoff_scan.py": ("queued_command",),
+    "hooks/handoff_after_clear.py": ("handoff-pointers",),
+    "hooks/context_usage_reminder.py": ("context-reminder",),
+}
 OLD_PLUGIN = "handoff-compact@claude-handoff"
 STAMP = time.strftime("%Y%m%d-%H%M%S")
 
 
 def is_old_hook(hook):
-    cmd = str(hook.get("command") or "") if isinstance(hook, dict) else ""
-    return any("/.claude/hooks/" + s in cmd for s in OLD_SCRIPTS)
+    return isinstance(hook, dict) and script_of(hook.get("command")) is not None
 
 
 def strip_hooks(settings):
@@ -81,28 +89,37 @@ def strip_hooks(settings):
 
 
 def ours(path):
-    """Is this old file from this project? Hook scripts and the scan script always are (fixed names in
-    ~/.claude/hooks and next to handoff.md); handoff.md only when it carries our marks."""
-    if not path.endswith("handoff.md"):
-        return True
+    """Is this old file from this project? Only when it carries one of its marks (OLD_FILES)."""
+    marks = OLD_FILES[os.path.relpath(path, CLAUDE)]
     try:
-        text = open(path, encoding="utf-8").read()
+        text = open(path, encoding="utf-8", errors="replace").read()
     except OSError:
         return False
-    return "claude-handoff" in text or "HANDOFF_VERSION" in text
+    return any(m in text for m in marks)
 
 
-def old_plugin_installed():
+def old_plugin_installs():
+    """[(scope, projectPath or None)] of the old plugin; [("user", None)] when only settings name it."""
     try:
         data = json.load(open(os.path.join(CLAUDE, "plugins", "installed_plugins.json"), encoding="utf-8"))
     except (OSError, ValueError):
         data = {}
-    try:
-        settings = json.load(open(SETTINGS, encoding="utf-8"))
-    except (OSError, ValueError):
-        settings = {}
-    enabled = settings.get("enabledPlugins") if isinstance(settings, dict) else None
-    return OLD_PLUGIN in (data.get("plugins") or {}) or (isinstance(enabled, dict) and OLD_PLUGIN in enabled)
+    records = (data.get("plugins") or {}).get(OLD_PLUGIN) if isinstance(data, dict) else None
+    found = [(r.get("scope") or "user", r.get("projectPath")) for r in records or [] if isinstance(r, dict)]
+    if not found:
+        try:
+            settings = json.load(open(SETTINGS, encoding="utf-8"))
+        except (OSError, ValueError):
+            settings = {}
+        enabled = settings.get("enabledPlugins") if isinstance(settings, dict) else None
+        if isinstance(enabled, dict) and OLD_PLUGIN in enabled:
+            found = [("user", None)]
+    return found
+
+
+def uninstall_command(scope, project):
+    cmd = "claude plugin uninstall %s --scope %s" % (OLD_PLUGIN, scope)
+    return ("cd %s && %s" % (shlex.quote(project), cmd)) if project else cmd
 
 
 def main():
@@ -130,13 +147,13 @@ def main():
     skipped = [f for f in files if not ours(f)]
     files = [f for f in files if ours(f)]
     plan += ["move file    " + f for f in files]
-    plugin = old_plugin_installed()
-    if plugin:
-        plan.append("uninstall    " + OLD_PLUGIN)
+    installs = old_plugin_installs()
+    plan += ["uninstall    %s (%s scope%s)" % (OLD_PLUGIN, sc, ", " + pp if pp else "") for sc, pp in installs]
 
     for f in skipped:
-        print("left alone   %s (does not look like this project's; your own /handoff keeps priority over the "
-              "plugin's, which is then reachable as /handoff:handoff)" % f)
+        note = ("; your own /handoff keeps priority over the plugin's, which is then /handoff:handoff"
+                if f.endswith("handoff.md") else "")
+        print("left alone   %s (does not look like this project's%s)" % (f, note))
     if not plan:
         print("Nothing to migrate: no old install of claude-handoff found.")
         return
@@ -163,14 +180,18 @@ def main():
             os.makedirs(os.path.dirname(dest), exist_ok=True)
             shutil.move(f, dest)
         print("old files moved to %s" % dest_root)
-    if plugin:
+    for scope, project in installs:
+        if project and not os.path.isdir(project):
+            print("skipped %s in %s (that folder is gone)" % (OLD_PLUGIN, project))
+            continue
         try:
-            r = subprocess.run(["claude", "plugin", "uninstall", OLD_PLUGIN], capture_output=True, text=True, timeout=120)
+            r = subprocess.run(["claude", "plugin", "uninstall", OLD_PLUGIN, "--scope", scope], cwd=project,
+                               capture_output=True, text=True, timeout=120)
             ok = r.returncode == 0
         except (OSError, subprocess.SubprocessError):
             ok = False
-        print(("uninstalled %s" % OLD_PLUGIN) if ok else
-              ("could not uninstall %s; run: claude plugin uninstall %s" % (OLD_PLUGIN, OLD_PLUGIN)))
+        print(("uninstalled %s (%s scope)" % (OLD_PLUGIN, scope)) if ok else
+              ("could not uninstall %s; run: %s" % (OLD_PLUGIN, uninstall_command(scope, project))))
     print("Done. Start a new conversation (or restart Claude Code) for the plugin to take over.")
 
 

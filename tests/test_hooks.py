@@ -270,13 +270,27 @@ class ScanChinese(Base):
         self.assertNotIn("\u6539\u597d\u4e86", r.stdout.split("## 2.")[1])
 
 
-OLD_HOOKS = {
-    "SessionStart": [{"hooks": [{"type": "command", "command": "python3 /h/.claude/hooks/handoff_after_clear.py"}]}],
-    "UserPromptSubmit": [{"hooks": [{"type": "command", "command": "python3 /h/.claude/hooks/context_usage_reminder.py"},
-                                    {"type": "command", "command": "python3 /h/.claude/hooks/mine.py"}]}],
-    "PostToolUse": [{"hooks": [{"type": "command", "command": "python3 /h/.claude/hooks/context_usage_reminder.py"}]}],
-    "Stop": [{"hooks": [{"type": "command", "command": "echo stop"}]}],
-}
+def old_hooks(home):
+    """Hooks as install.py registered them, plus two that are not ours."""
+    d = os.path.join(home, ".claude", "hooks")
+    return {
+        "SessionStart": [{"hooks": [{"type": "command", "command": "python3 %s/handoff_after_clear.py" % d}]}],
+        "UserPromptSubmit": [{"hooks": [{"type": "command", "command": "python3 %s/context_usage_reminder.py" % d},
+                                        {"type": "command", "command": "python3 %s/mine.py" % d}]}],
+        "PostToolUse": [{"hooks": [{"type": "command", "command": "python3 %s/context_usage_reminder.py" % d}],
+                         "timeout": 5}],
+        "Stop": [{"matcher": "", "hooks": [{"type": "command", "command": "echo %s/context_usage_reminder.py" % d}]}],
+    }
+
+
+def put_old_files(home, files=("hooks/handoff_after_clear.py", "hooks/context_usage_reminder.py")):
+    marks = {"handoff_after_clear.py": "handoff-pointers", "context_usage_reminder.py": "context-reminder",
+             "handoff_scan.py": "queued_command", "handoff.md": "HANDOFF_VERSION"}
+    for rel in files:
+        path = os.path.join(home, ".claude", rel)
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path, "w") as f:
+            f.write("# old copy: %s\n" % marks.get(os.path.basename(rel), ""))
 
 
 class Legacy(Base):
@@ -299,15 +313,29 @@ class Legacy(Base):
                    home=self.home, cwd=self.work, env_extra=env)
 
     def test_reminder_is_silent_while_the_old_one_is_registered(self):
-        self.write_settings({"hooks": OLD_HOOKS})
+        put_old_files(self.home)
+        self.write_settings({"hooks": old_hooks(self.home)})
         self.assertEqual(self.remind().stdout, "")
 
     def test_reminder_fires_when_only_unrelated_hooks_exist(self):
-        self.write_settings({"hooks": {"Stop": OLD_HOOKS["Stop"]}})
+        put_old_files(self.home)
+        self.write_settings({"hooks": {"Stop": old_hooks(self.home)["Stop"]}})   # `echo <our path>` is not ours
+        self.assertIn("past the 60% line", self.remind().stdout)
+
+    def test_registered_but_old_file_gone_the_plugin_reminds(self):
+        self.write_settings({"hooks": old_hooks(self.home)})                      # no files on disk
+        self.assertIn("past the 60% line", self.remind().stdout)
+
+    def test_old_entry_with_a_matcher_does_not_count(self):
+        put_old_files(self.home)
+        h = old_hooks(self.home)
+        for event in ("UserPromptSubmit", "PostToolUse"):
+            h[event][0]["matcher"] = "Bash"
+        self.write_settings({"hooks": h})
         self.assertIn("past the 60% line", self.remind().stdout)
 
     def test_the_old_copy_never_silences_itself(self):
-        self.write_settings({"hooks": OLD_HOOKS})
+        self.write_settings({"hooks": old_hooks(self.home)})
         old = os.path.join(self.home, ".claude", "hooks")
         os.makedirs(old)
         for name in ("context_usage_reminder.py", "legacy.py"):
@@ -317,11 +345,15 @@ class Legacy(Base):
     def test_session_start_notice_and_no_double_injection(self):
         p = self.write_handoff(1)
         run(AFTER_CLEAR, ["--mark", p], home=self.home, cwd=self.work)
-        self.write_settings({"hooks": OLD_HOOKS})
+        put_old_files(self.home)
+        self.write_settings({"hooks": old_hooks(self.home)})
         out = json.loads(self.start().stdout)
         self.assertIn("older install is still active", out["systemMessage"])
         self.assertIn("scripts/migrate.py", out["systemMessage"])
         self.assertNotIn("hookSpecificOutput", out, "the old SessionStart hook injects; the plugin must not")
+        with open(os.path.join(self.home, ".claude", "handoff-pointers", os.listdir(
+                os.path.join(self.home, ".claude", "handoff-pointers"))[0])) as f:
+            self.assertNotIn("consumed_at", json.load(f), "the pointer is left for the old hook")
         zh = json.loads(self.start(env={"CLAUDE_HANDOFF_LANG": "zh"}).stdout)
         self.assertIn("旧的安装还在生效", zh["systemMessage"])
 
@@ -332,14 +364,28 @@ class Legacy(Base):
         open(os.path.join(self.home, ".claude", "commands", "handoff.md"), "w").write("HANDOFF_VERSION")
         out = json.loads(self.start().stdout)
         self.assertIn("commands/handoff.md", out["systemMessage"])
+        self.assertEqual(out["hookSpecificOutput"]["hookEventName"], "SessionStart")
         self.assertIn("Fix the login page", out["hookSpecificOutput"]["additionalContext"])
+        self.assertNotIn("hookSpecificOutput", json.loads(self.start().stdout), "a pointer is used once")
 
     def test_old_plugin_enabled_is_reported(self):
         self.write_settings({"enabledPlugins": {"handoff-compact@claude-handoff": True}})
         self.assertIn("handoff-compact@claude-handoff", json.loads(self.start().stdout)["systemMessage"])
 
+    def test_unwritable_pointer_still_injects(self):
+        p = self.write_handoff(1)
+        run(AFTER_CLEAR, ["--mark", p], home=self.home, cwd=self.work)
+        d = os.path.join(self.home, ".claude", "handoff-pointers")
+        ptr = os.path.join(d, [f for f in os.listdir(d) if f.endswith(".json")][0])
+        os.chmod(ptr, 0o444)
+        try:
+            self.assertIn("Fix the login page", self.start().stdout)
+        finally:
+            os.chmod(ptr, 0o644)
+
     def test_no_notice_on_resume_and_nothing_without_leftovers(self):
-        self.write_settings({"hooks": OLD_HOOKS})
+        put_old_files(self.home)
+        self.write_settings({"hooks": old_hooks(self.home)})
         self.assertEqual(self.start("resume").stdout, "")
         self.write_settings({})
         self.assertEqual(self.start().stdout, "")
@@ -349,12 +395,9 @@ class Migrate(Base):
     def setUp(self):
         super().setUp()
         self.claude = os.path.join(self.home, ".claude")
-        for rel in ("commands/handoff.md", "commands/handoff_scan.py", "hooks/handoff_after_clear.py",
-                    "hooks/context_usage_reminder.py", "hooks/mine.py"):
-            os.makedirs(os.path.dirname(os.path.join(self.claude, rel)), exist_ok=True)
-            with open(os.path.join(self.claude, rel), "w") as f:
-                f.write("<!-- HANDOFF_VERSION -->" if rel.endswith(".md") else "# " + rel)
-        self.original = {"hooks": OLD_HOOKS, "env": {"CLAUDE_CONTEXT_WINDOW": "1000000"}, "model": "opus"}
+        put_old_files(self.home, ("commands/handoff.md", "commands/handoff_scan.py", "hooks/handoff_after_clear.py",
+                                  "hooks/context_usage_reminder.py", "hooks/mine.py"))
+        self.original = {"hooks": old_hooks(self.home), "env": {"CLAUDE_CONTEXT_WINDOW": "1000000"}, "model": "opus"}
         self.settings_path = os.path.join(self.claude, "settings.json")
         with open(self.settings_path, "w") as f:
             json.dump(self.original, f)
@@ -379,9 +422,12 @@ class Migrate(Base):
         r = self.migrate("--apply")
         self.assertEqual(r.returncode, 0, r.stderr)
         s = self.settings()
-        cmds = [h["command"] for g in sum(s["hooks"].values(), []) for h in g["hooks"]]
-        self.assertEqual(sorted(cmds), ["echo stop", "python3 /h/.claude/hooks/mine.py"])
-        self.assertNotIn("SessionStart", s["hooks"], "an event left empty is dropped")
+        d = os.path.join(self.claude, "hooks")
+        expected = old_hooks(self.home)
+        del expected["SessionStart"]                       # an event left empty is dropped
+        del expected["PostToolUse"]
+        expected["UserPromptSubmit"][0]["hooks"] = [{"type": "command", "command": "python3 %s/mine.py" % d}]
+        self.assertEqual(s["hooks"], expected, "only our entries go; everything else is unchanged")
         self.assertEqual((s["env"], s["model"]), (self.original["env"], self.original["model"]))
         backups = [f for f in os.listdir(self.claude) if f.startswith("settings.json.bak-handoff-")]
         self.assertEqual(len(backups), 1)
@@ -389,27 +435,31 @@ class Migrate(Base):
             self.assertEqual(json.load(f), self.original)
         moved = [d for d in os.listdir(self.claude) if d.startswith("handoff-migrated-")]
         self.assertEqual(len(moved), 1)
-        self.assertTrue(os.path.isfile(os.path.join(self.claude, moved[0], "commands", "handoff.md")))
-        self.assertFalse(os.path.exists(os.path.join(self.claude, "hooks", "context_usage_reminder.py")))
+        for rel in ("commands/handoff.md", "commands/handoff_scan.py", "hooks/handoff_after_clear.py",
+                    "hooks/context_usage_reminder.py"):
+            self.assertTrue(os.path.isfile(os.path.join(self.claude, moved[0], rel)), rel)
+            self.assertFalse(os.path.exists(os.path.join(self.claude, rel)), rel)
         self.assertTrue(os.path.isfile(os.path.join(self.claude, "hooks", "mine.py")), "not ours, not moved")
 
     def test_second_run_finds_nothing(self):
         self.migrate("--apply")
         self.assertIn("Nothing to migrate", self.migrate("--apply").stdout)
 
-    def test_a_foreign_handoff_command_is_left_alone(self):
-        with open(os.path.join(self.claude, "commands", "handoff.md"), "w") as f:
-            f.write("my own /handoff command")
+    def test_foreign_files_with_our_names_are_left_alone(self):
+        for rel in ("commands/handoff.md", "commands/handoff_scan.py"):
+            with open(os.path.join(self.claude, rel), "w") as f:
+                f.write("my own file")
         r = self.migrate("--apply")
-        self.assertIn("left alone", r.stdout)
-        self.assertTrue(os.path.isfile(os.path.join(self.claude, "commands", "handoff.md")))
+        self.assertEqual(r.stdout.count("left alone"), 2)
+        for rel in ("commands/handoff.md", "commands/handoff_scan.py"):
+            self.assertTrue(os.path.isfile(os.path.join(self.claude, rel)), rel)
 
     def test_old_plugin_uninstall_falls_back_to_printing_the_command(self):
         s = dict(self.original, enabledPlugins={"handoff-compact@claude-handoff": True})
         with open(self.settings_path, "w") as f:
             json.dump(s, f)
         r = self.migrate("--apply")
-        self.assertIn("claude plugin uninstall handoff-compact@claude-handoff", r.stdout)
+        self.assertIn("claude plugin uninstall handoff-compact@claude-handoff --scope user", r.stdout)
 
     def test_invalid_settings_changes_nothing(self):
         with open(self.settings_path, "w") as f:
@@ -428,18 +478,24 @@ class Manifest(unittest.TestCase):
         plugin = self.load(".claude-plugin", "plugin.json")
         entry = self.load(".claude-plugin", "marketplace.json")["plugins"]
         self.assertEqual([e["name"] for e in entry], [plugin["name"]])
+        self.assertEqual(plugin["name"], "handoff", "the tool id mcp__handoff__compact_now depends on it")
         self.assertEqual(entry[0]["source"], "./")
         self.assertRegex(plugin["version"], r"^\d+\.\d+\.\d+$")
         # a version in the marketplace entry would win over plugin.json: keep exactly one
         self.assertNotIn("version", entry[0])
 
-    def test_every_hook_command_names_a_file_that_exists(self):
+    def test_hooks_json_registers_exactly_the_three_hooks_and_the_module(self):
         hooks = self.load("hooks", "hooks.json")
-        for groups in hooks["hooks"].values():
-            for h in groups[0]["hooks"]:
-                rel = h["command"].split("${CLAUDE_PLUGIN_ROOT}/")[1].rstrip('"')
-                self.assertTrue(os.path.isfile(os.path.join(ROOT, rel)), rel)
-        self.assertTrue(os.path.isfile(os.path.join(ROOT, "hooks", hooks["modules"][0])))
+        got = {event: [shlex.split(h["command"]) for g in groups for h in g["hooks"]]
+               for event, groups in hooks["hooks"].items()}
+        script = lambda name: [["python3", "${CLAUDE_PLUGIN_ROOT}/hooks/" + name]]
+        self.assertEqual(got, {"SessionStart": script("handoff_after_clear.py"),
+                               "UserPromptSubmit": script("context_usage_reminder.py"),
+                               "PostToolUse": script("context_usage_reminder.py")})
+        for argv in sum(got.values(), []):
+            self.assertTrue(os.path.isfile(os.path.join(ROOT, argv[1].split("}/")[1])), argv)
+        self.assertEqual(hooks["modules"], ["./register.ts"])
+        self.assertTrue(os.path.isfile(os.path.join(ROOT, "hooks", "register.ts")))
 
 
 if __name__ == "__main__":

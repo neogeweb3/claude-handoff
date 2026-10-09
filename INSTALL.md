@@ -58,7 +58,10 @@ if WINDOW:
     s.setdefault("env", {})["CLAUDE_CONTEXT_WINDOW"] = WINDOW
 if LANG:
     s.setdefault("env", {})["CLAUDE_HANDOFF_LANG"] = LANG
-json.dump(s, open(p, "w"), ensure_ascii=False, indent=2)
+tmp = p + ".tmp-handoff"
+with open(tmp, "w") as f:
+    json.dump(s, f, ensure_ascii=False, indent=2)
+os.replace(tmp, p)   # all or nothing: never a half-written settings.json
 EOF
 ```
 

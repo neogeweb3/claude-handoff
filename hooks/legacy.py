@@ -12,6 +12,7 @@ when the plugin stays silent.
 """
 import json
 import os
+import shlex
 
 CLAUDE = os.path.join(os.path.expanduser("~"), ".claude")
 SETTINGS = os.path.join(CLAUDE, "settings.json")
@@ -32,18 +33,36 @@ def _settings():
         return {}
 
 
+def script_of(cmd, names=SCRIPTS):
+    """If this hook command is `python3 <...>/.claude/hooks/<one of names>` (how install.py registered it,
+    the path shlex-quoted when it has spaces), the script path it runs; otherwise None."""
+    try:
+        argv = shlex.split(str(cmd or ""))
+    except ValueError:
+        return None
+    if len(argv) < 2 or not os.path.basename(argv[0]).startswith("python"):
+        return None
+    path = os.path.expanduser(argv[1])
+    parent = os.path.dirname(path)
+    if (os.path.basename(path) in names and os.path.basename(parent) == "hooks"
+            and os.path.basename(os.path.dirname(parent)) == ".claude"):
+        return path
+    return None
+
+
 def old_hooks(settings=None, script=None):
-    """Hook commands in ~/.claude/settings.json that run an old copy of our scripts."""
+    """Old registrations in ~/.claude/settings.json: [(command, script path, matcher)]."""
     names = SCRIPTS if script is None else (script,)
     hooks = (settings if settings is not None else _settings()).get("hooks")
     found = []
     for groups in (hooks.values() if isinstance(hooks, dict) else []):
         for group in (groups if isinstance(groups, list) else []):
-            inner = group.get("hooks") if isinstance(group, dict) else None
-            for hook in (inner if isinstance(inner, list) else []):
-                cmd = str(hook.get("command") or "") if isinstance(hook, dict) else ""
-                if any("/.claude/hooks/" + n in cmd for n in names):
-                    found.append(cmd)
+            if not isinstance(group, dict) or not isinstance(group.get("hooks"), list):
+                continue
+            for hook in group["hooks"]:
+                path = script_of(hook.get("command"), names) if isinstance(hook, dict) else None
+                if path:
+                    found.append((hook["command"], path, group.get("matcher")))
     return found
 
 
@@ -58,10 +77,13 @@ def running_as_old_copy(path):
 
 
 def silenced(script_path):
-    """Should the plugin's copy of this script stay quiet because an old copy is registered?"""
+    """Should the plugin's copy of this script stay quiet because an old copy will do the job?
+    Only when that copy can actually run (its file is there) on every occasion (no matcher): a twice-shown
+    reminder is a nuisance, a missing one defeats the point."""
     if running_as_old_copy(script_path):
         return False
-    return bool(old_hooks(script=os.path.basename(script_path)))
+    return any(os.path.isfile(path) and matcher in (None, "", "*")
+               for _, path, matcher in old_hooks(script=os.path.basename(script_path)))
 
 
 def leftovers():

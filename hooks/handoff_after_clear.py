@@ -201,7 +201,10 @@ def pointer_text(hook):
     if s11:
         lines += ["", "Opening instruction (§11 text):", s11]
     ptr.update(consumed_at=time.time(), consumed_by={"source": source, "session_id": hook.get("session_id")})
-    json.dump(ptr, open(p, "w"), ensure_ascii=False)
+    try:
+        json.dump(ptr, open(p, "w"), ensure_ascii=False)
+    except OSError as e:  # failing to mark it used must not cost the handoff itself
+        log("could not mark pointer used: %r | %s" % (e, p))
     log("inject source=%s | cwd=%s | %s | %s" % (source, cwd, ptr["handoff"], env))
     return "\n".join(lines)
 
