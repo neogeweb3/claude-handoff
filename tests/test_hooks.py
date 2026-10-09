@@ -50,7 +50,8 @@ codeword-{v}
 
 def run(script, args=(), stdin="", home=None, cwd=None, env_extra=None):
     env = dict(os.environ, HOME=home)
-    env.pop("CLAUDE_CONTEXT_WINDOW", None)
+    for name in ("CLAUDE_CONTEXT_WINDOW", "CLAUDE_HANDOFF_LANG"):  # the tester's own settings must not leak in
+        env.pop(name, None)
     env.update(env_extra or {})
     return subprocess.run([sys.executable, script, *args], input=stdin, capture_output=True,
                           text=True, env=env, cwd=cwd, timeout=30)
