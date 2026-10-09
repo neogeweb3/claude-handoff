@@ -3,7 +3,7 @@ import { test, expect, mock } from 'claude-code/testing'
 const P = '/tmp/HANDOFF-test.md'
 const BODY = '# HANDOFF\n§0 first item'
 const ZH = '# 交接\n' + '本轮是第一次走完整的交接流程，先问两件事。'.repeat(5)
-const TOOL = 'mcp__handoff-compact__compact_now'
+const TOOL = 'mcp__handoff__compact_now'
 const turn = (over = {}) => ({ answer: 'ok', durationMs: 1, isAborted: false, turnId: 't1', reason: 'answer' as const, ...over })
 
 // Mocks the world beneath the mod; records the /compact commands and prompts it sends.

@@ -1,0 +1,6 @@
+{
+  "name": "handoff",
+  "version": "0.2.0",
+  "description": "Session handoffs for Claude Code: /handoff writes a handoff, a reminder at 60%/80% context, every version archived, and (Claude Code 2.1.287+) the session compacts in place with the handoff as its summary and carries on by itself.",
+  "author": { "name": "neogeweb3" }
+}

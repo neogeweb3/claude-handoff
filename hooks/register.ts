@@ -5,6 +5,9 @@ import type { Engine, Register } from 'claude-code'
 // same session picks up where it left off. Auto-compaction and a manual /compact are left alone.
 
 const TOOL = 'compact_now'
+// The standalone mod this plugin replaced. While it is still enabled it does this job, so this copy
+// registers nothing: two compact_now tools and two takeovers of the same compaction would collide.
+const OLD_PLUGIN = 'handoff-compact@claude-handoff'
 
 // The handoff is written in the user's language; the visible lines follow it.
 const isChinese = (text: string) => (text.match(/[一-鿿]/g)?.length ?? 0) >= 50
@@ -52,6 +55,8 @@ function queueCompact($: Engine): void {
 
 export const register: Register = on => {
   on('session.start', async ($, e, next) => {
+    const enabled = (await $.settings.read()).enabledPlugins as Record<string, unknown> | undefined
+    if (enabled?.[OLD_PLUGIN] === true) return next(e)
     await $.tool.register({
       name: TOOL,
       description:
@@ -68,7 +73,8 @@ export const register: Register = on => {
     return next(e)
   })
 
-  on('tool.call', { tool: 'mcp__handoff-compact__compact_now' }, async ($, e) => {
+  // mcp__<plugin name>__<tool name>, written out so the engine can read it from the source
+  on('tool.call', { tool: 'mcp__handoff__compact_now' }, async ($, e) => {
     const path = String((e as { path?: unknown }).path ?? '')
     if (!path.startsWith('/')) return { deny: 'path must be an absolute path' }
     if (!(await $.fs.exists(path))) return { deny: `Handoff file not found: ${path}` }

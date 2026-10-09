@@ -1,6 +1,0 @@
-{
-  "name": "handoff-compact",
-  "version": "0.1.0",
-  "description": "Lets /handoff resume in place: compacts once with the handoff file as the summary, then continues on its own. No /clear, no typing.",
-  "author": { "name": "neogeweb3" }
-}

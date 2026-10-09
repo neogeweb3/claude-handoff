@@ -2,21 +2,21 @@
 """handoff_after_clear.py: /handoff writes the handoff -> user types /clear -> says "continue". No copy-paste in between.
 
 Two modes:
-  python3 ~/.claude/hooks/handoff_after_clear.py --mark <absolute path to handoff file>
+  python3 <plugin folder>/hooks/handoff_after_clear.py --mark <absolute path to handoff file>
       Called as the last step of /handoff:
       1. leaves a pointer for the directory the handoff belongs to;
       2. copies this version into ~/.claude/handoff-history/ (append-only) and adds a line to index.tsv.
-  python3 ~/.claude/hooks/handoff_after_clear.py --mark <absolute path> --archive-only
-      Used when the handoff-compact mod resumes in place (compact_now): archives only, leaves no pointer,
+  python3 <plugin folder>/hooks/handoff_after_clear.py --mark <absolute path> --archive-only
+      Used when the plugin resumes in place (compact_now): archives only, leaves no pointer,
       and removes any old pointer for that directory. The mod already puts the handoff into the context;
       a pointer left behind would inject this handoff again into an unrelated new conversation within 24h.
-  (SessionStart hook, registered in settings.json without a matcher; reads the hook input from stdin)
+  (SessionStart hook, registered in the plugin's hooks.json without a matcher; reads the hook input from stdin)
       Runs when a new conversation starts. If the source is clear or startup and the current directory
       has an unused pointer younger than 24 hours, it injects where the handoff is and how to resume,
       together with the text of §0 and §11, then marks the pointer as used.
 
 Why startup too: in the desktop app, /clear keeps the session and starts a new conversation underneath,
-and SessionStart reports source=startup, not clear (only the CLI sends clear). So the settings.json entry
+and SessionStart reports source=startup, not clear (only the CLI sends clear). So the hook entry
 has no matcher and this script filters by source.
 Why include §0: the handoff requires restating §0 before any tool call; with only a path, the model
 cannot know what to restate without reading the file first.
@@ -38,11 +38,18 @@ import subprocess
 import sys
 import time
 
+sys.path.insert(0, os.path.dirname(os.path.realpath(__file__)))
+try:
+    import legacy  # an older install left next to the plugin: see legacy.py
+except ImportError:  # this file used on its own, outside the plugin
+    legacy = None
+
 DIR = os.path.expanduser("~/.claude/handoff-pointers")
 LOG = os.path.join(DIR, "hook.log")
 HISTORY = os.path.expanduser("~/.claude/handoff-history")
 MAX_AGE = 24 * 3600
 SOURCES = ("clear", "startup")
+LANG = (os.environ.get("CLAUDE_HANDOFF_LANG") or "en").lower()
 
 
 def pointer_for(cwd):
@@ -135,29 +142,47 @@ def on_session_start():
         hook = json.load(sys.stdin)
     except ValueError:
         return
+    source = hook.get("source")
+    note = ""
+    if legacy and source in SOURCES and not legacy.running_as_old_copy(__file__):
+        note = legacy.notice(LANG)
+    # an old copy of this hook is still registered and injects the handoff itself
+    text = "" if legacy and legacy.silenced(__file__) else pointer_text(hook)
+    sys.stdout.reconfigure(encoding="utf-8")
+    if note:
+        out = {"systemMessage": note}
+        if text:
+            out["hookSpecificOutput"] = {"hookEventName": "SessionStart", "additionalContext": text}
+        print(json.dumps(out, ensure_ascii=False))
+    elif text:
+        print(text)
+
+
+def pointer_text(hook):
+    """The text to inject for an unused pointer of this directory, or "". Marks the pointer used."""
     source, cwd = hook.get("source"), hook.get("cwd") or os.getcwd()
     p = pointer_for(cwd)
     if not os.path.isfile(p):
-        return
+        return ""
     ptr = json.load(open(p))
     if ptr.get("consumed_at"):
-        return
+        return ""
     if ptr.get("cwd") and os.path.realpath(ptr["cwd"]) != os.path.realpath(cwd):
         # pointer file names are lossy (/ . _ all become -): never hand one project's handoff to another
         log("skip pointer belongs to %s | cwd=%s" % (ptr["cwd"], cwd))
-        return
+        return ""
     env = "entrypoint=%s attended=%s" % (os.environ.get("CLAUDE_CODE_ENTRYPOINT", "-"),
                                           os.environ.get("CLAUDE_CODE_SESSION_ATTENDED", "-"))
     if source not in SOURCES:
         log("skip source=%s (only clear / startup are used; pointer kept) | cwd=%s | %s" % (source, cwd, env))
-        return
+        return ""
     dead = ("older than 24 hours" if time.time() - ptr.get("written_at", 0) > MAX_AGE
             else "handoff file missing" if not os.path.isfile(ptr.get("handoff", "")) else "")
     if dead:
         ptr.update(consumed_at=time.time(), consumed_by={"skipped": dead})
         json.dump(ptr, open(p, "w"), ensure_ascii=False)
         log("skip %s | cwd=%s | %s" % (dead, cwd, env))
-        return
+        return ""
     s0, s11 = section(ptr["handoff"], "0", 2500), section(ptr["handoff"], "11", 2000)
     when = time.strftime("%m-%d %H:%M", time.localtime(ptr["written_at"]))
     lines = ["[Handoff from the previous conversation] written %s: %s" % (when, ptr["handoff"]),
@@ -175,11 +200,10 @@ def on_session_start():
         lines += ["", "§0 text:", s0]
     if s11:
         lines += ["", "Opening instruction (§11 text):", s11]
-    sys.stdout.reconfigure(encoding="utf-8")
-    print("\n".join(lines))
     ptr.update(consumed_at=time.time(), consumed_by={"source": source, "session_id": hook.get("session_id")})
     json.dump(ptr, open(p, "w"), ensure_ascii=False)
     log("inject source=%s | cwd=%s | %s | %s" % (source, cwd, ptr["handoff"], env))
+    return "\n".join(lines)
 
 
 if __name__ == "__main__":

@@ -4,6 +4,8 @@ description: Condense this conversation into HANDOFF.md so you can /clear and sa
 
 Condense the current conversation into HANDOFF.md at the root of the current working directory (if the working directory is `/` or `~`, write `~/HANDOFF-<timestamp>.md` instead).
 
+**Your own additions**: if `~/.claude/handoff.local.md` exists, read it first and follow it as well; it holds the user's private extra steps (more checks, other places to record the handoff). Where it conflicts with this file, it wins. It is never part of the plugin, so updates leave it alone.
+
 **Language**: write the handoff in the language the user has been using in this conversation. Section headings stay as in the template below (the hooks look for `## §0` and `## §11`). §9 is always copied verbatim in whatever language the user wrote.
 
 ## Why this instead of /compact
@@ -43,7 +45,7 @@ ls HANDOFF.md 2>/dev/null && echo "anchored merge" || echo "fresh write"
 **Then run the scan** (skip in emergency mode):
 
 ```bash
-python3 ~/.claude/commands/handoff_scan.py
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/handoff_scan.py"
 ```
 
 It pulls three things out of the transcript: all of the user's messages, every sentence where you said something is not done / not verified / pending, and the same kind of sentence from background agent results. Go through parts 2 and 3 one by one: what still holds goes into §2 or §10, what is stale is left out. **This is the category both handoffs and compaction most often lose.** Put the transcript path printed on the first line into §10.
@@ -53,6 +55,7 @@ It pulls three things out of the transcript: all of the user's messages, every s
 1. **Top 3 dead ends**: if the next session only reads CLAUDE.md and the task name, which 3 actions will it naturally reach for? Which of those are proven not to work (evidence: file:line / commit / command output / the user's words)?
 2. **Blockers**: what is blocking progress? Whose decision is it waiting on?
 3. **Decisions and emotional context**: did the user agree readily or reluctantly? How many times has this topic come up? How many times did the user push back, and what were the key words?
+   Counting for the header: a **push back** is the user explicitly correcting your direction or framing; a **decision outsource** is handing the user options to pick from, or asking them to verify something you could have checked yourself; a **loop** is spec → plan → hit a wall → back again.
 4. **Last 5 user messages ready verbatim**: including pushback, reversals and agreements. No paraphrase.
 5. **Build / test status**: last green commit plus the command that verifies it.
 6. **Fidelity self-assessment**: high / medium / low, with the basis and what may be missing.
@@ -75,13 +78,13 @@ You cannot see your own context percentage. **Do not estimate it**; an estimate 
 **Do exactly three steps and nothing else** (no git log, no scan, no memory updates, no self-review):
 1. **One Write** of the handoff file. Target: `HANDOFF.md` if it does not exist or you already know it belongs to this line of work; otherwise `HANDOFF-<yyyymmdd-hhmm>.md` next to it (never overwrite a handoff you have not confirmed is yours). Order: §9 (copy the last 5 user messages straight from your context; this is the one thing that is gone once context is lost) → §0 → §1 → §2 → §4 → whatever else fits.
 2. **One commit command** (inside a git repo): `git add <handoff file> && git commit -m "handoff V<N>"`.
-3. **One command to leave the pointer and archive**: `python3 ~/.claude/hooks/handoff_after_clear.py --mark <absolute path to the handoff file>`, then tell the user: "type /clear, then say continue". If `mcp__handoff-compact__compact_now` is in your tool list, take the mod route in "Last step" instead (`--mark ... --archive-only`, then `compact_now`).
+3. **One command to leave the pointer and archive**: `python3 "${CLAUDE_PLUGIN_ROOT}/hooks/handoff_after_clear.py" --mark <absolute path to the handoff file>`, then tell the user: "type /clear, then say continue". If a tool ending in `__compact_now` is in your tool list, take the mod route in "Last step" instead (`--mark ... --archive-only`, then `compact_now`).
 
 **Before writing §10, look at the start of your own context**: if it begins with a summary block like "This session is being continued from a previous conversation…", compaction has already happened. §10 says **fidelity low** and "this file is based on a compaction summary", and the raw transcript path goes into the first line of §2: `~/.claude/projects/<dir>/<sessionId>.jsonl`. **Never write "no compaction notice seen" without having looked.**
 
 **After compaction, do not suggest starting a new session**: the context has already been reset, keep working where you are.
 
-**Recovery afterwards** (context was reset and the user asks you to continue): rebuild §9 from the transcript JSONL. Entries with `type=user` whose `message.content` is a string are the user's messages; **messages queued while a task was running are not in type=user**, they are in the `prompt` of entries with `type=attachment` and `attachment.type=queued_command`; text blocks in `type=assistant` entries are your own replies, use them to recover numbers and loose ends the summary dropped. Tag it V<N+1>, with PRIOR_HANDOFF pointing to the previous version.
+**Recovery afterwards** (context was reset and the user asks you to continue): rebuild §9 from the transcript JSONL. Entries with `type=user` whose `message.content` is a string are the user's messages; **messages queued while a task was running are not in type=user**, they are in the `prompt` of entries with `type=attachment` and `attachment.type=queued_command` (or the `content` of `type=queue-operation` entries); text blocks in `type=assistant` entries are your own replies, use them to recover numbers and loose ends the summary dropped. Tag it V<N+1>, with PRIOR_HANDOFF pointing to the previous version.
 
 ## File structure (11 sections, ordered by severity)
 
@@ -239,8 +242,8 @@ One `<claim> | verify: <cmd>` per line:
 
 **Verbatim**:
 - [ ] Version header complete (VERSION / TIMESTAMP / PRIOR / 3 counts)
-- [ ] §9 has ≥ 5 verbatim messages, each with a timestamp and a code block
-- [ ] Search §9 for `[paraphrased]` / `[summary]` → **0 hits**
+- [ ] §9 has ≥ 5 verbatim messages, each with a timestamp and a code block (a message under ~20 tokens is copied as is and noted in §10)
+- [ ] Search §9 for `[paraphrased]` / `[summary]` / `[摘要]` / `[抽要]` → **0 hits**
 
 **Structure**:
 - [ ] §0 has all 5 items filled in
@@ -287,18 +290,19 @@ If any step fails, fix the file and rerun all four steps until they pass.
 🚨 **Skipping this means the handoff was not delivered.**
 
 1. **Inside a git repo, commit**: `git add <handoff file> && git commit -m "handoff V<N>"`.
-2. **If your tool list has `mcp__handoff-compact__compact_now`** (the optional handoff-compact mod is installed), resume in place:
-   1. `python3 ~/.claude/hooks/handoff_after_clear.py --mark <absolute path to the handoff file> --archive-only` (archives this version; leaves no pointer, because nothing needs picking up later).
+2. **If your tool list has a tool ending in `__compact_now`** (`mcp__handoff__compact_now`, or `mcp__handoff-compact__compact_now` from the older separate plugin; needs Claude Code 2.1.287+), resume in place:
+   1. `python3 "${CLAUDE_PLUGIN_ROOT}/hooks/handoff_after_clear.py" --mark <absolute path to the handoff file> --archive-only` (archives this version; leaves no pointer, because nothing needs picking up later).
    2. Call `compact_now` with `path` = the handoff file's absolute path.
    3. Reply with one sentence: "Handoff V<N> written; compacting now and carrying on." End the turn there and call no other tool.
 
-   When the turn ends, the mod compacts the conversation once, with the handoff file's full text in place of the summary, then sends "continue" by itself. The user types nothing. **Skip steps 3–4 below.**
+   When the turn ends, the plugin compacts the conversation once, with the handoff file's full text in place of the summary, then sends "continue" by itself. The user types nothing. **Skip steps 3–4 below.**
 
    **Otherwise** (no such tool), continue with steps 3–4 below.
-3. **Leave the pointer and archive**: `python3 ~/.claude/hooks/handoff_after_clear.py --mark <absolute path to the handoff file>`.
+3. **Leave the pointer and archive**: `python3 "${CLAUDE_PLUGIN_ROOT}/hooks/handoff_after_clear.py" --mark <absolute path to the handoff file>`.
    It does two things:
    - Leaves a one-time pointer for the handoff's directory (valid for 24 hours, keyed by directory, never leaks into another project).
    - Copies this version into `~/.claude/handoff-history/`, append-only, and adds a line to `index.tsv` (time, version, directory, task).
+   The output says which directory the pointer is attached to; check it is this session's directory.
    Then tell the user in one sentence where the handoff was written and which version it is, then: "Type `/clear`, then say continue, and we pick up from here. Nothing to copy."
 4. **Do not paste §11**. When the new conversation starts, the SessionStart hook injects the handoff path plus the text of §0 and §11 automatically.
    If it did not pick up, check `~/.claude/handoff-pointers/hook.log` first.

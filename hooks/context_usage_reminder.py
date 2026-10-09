@@ -21,11 +21,12 @@ The transcript does not record the window size, so it is resolved in this order:
   3. otherwise 200k. A 1M-window user may get an early reminder before the first time a model passes
      200k; the reminder says so.
 The one line shown in the UI (systemMessage) is in English, or in Chinese when CLAUDE_HANDOFF_LANG=zh
-(set by `install.py --lang zh`). The text injected for Claude stays in English and tells it to reply in
+(set it under "env" in settings.json). The text injected for Claude stays in English and tells it to reply in
 the user's language.
 Any exception exits 0 silently so tool calls are never blocked.
 
-Check current usage by hand: python3 ~/.claude/hooks/context_usage_reminder.py --probe <transcript.jsonl>
+Check current usage by hand: python3 <plugin folder>/hooks/context_usage_reminder.py --probe <transcript.jsonl>
+(the plugin folder: `claude plugin list --json`, installPath of handoff@claude-handoff)
 """
 import json
 import os
@@ -33,6 +34,12 @@ import re
 import sys
 import time
 from pathlib import Path
+
+sys.path.insert(0, os.path.dirname(os.path.realpath(__file__)))
+try:
+    import legacy  # an older install left next to the plugin: see legacy.py
+except ImportError:  # this file used on its own, outside the plugin
+    legacy = None
 
 ENV_WINDOW = int(os.environ.get("CLAUDE_CONTEXT_WINDOW") or 0)
 LANG = (os.environ.get("CLAUDE_HANDOFF_LANG") or "en").lower()
@@ -96,6 +103,8 @@ def k(n):
 
 
 def main():
+    if legacy and legacy.silenced(__file__):
+        return  # an old copy of this hook is still registered and does the reminding
     data = json.loads(sys.stdin.read() or "{}")
     event = data.get("hook_event_name") or "PostToolUse"
     sid = str(data.get("session_id") or "")
@@ -132,7 +141,7 @@ def main():
         "(computed from input+cache tokens in the transcript, not estimated; you can quote this number).%s "
         "The convention is to hand off at 60%% and treat compaction only as a fallback: when you finish the step "
         "you are on, suggest in one sentence that the user run /handoff now. If your tool list has "
-        "mcp__handoff-compact__compact_now, /handoff compacts and carries on by itself, so do not mention /clear; "
+        "a tool ending in __compact_now, /handoff compacts and carries on by itself, so do not mention /clear; "
         "otherwise add: then /clear and say continue. "
         "If the user says no, keep working. Reply to the user in the language they write in. %s"
         % (k(ctx), pct, k(window), line, note,
