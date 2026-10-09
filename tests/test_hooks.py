@@ -102,9 +102,19 @@ class AfterClear(Base):
         run(AFTER_CLEAR, ["--mark", old], home=self.home, cwd=self.work)
         p = self.write_handoff(2)
         r = run(AFTER_CLEAR, ["--mark", p, "--archive-only"], home=self.home, cwd=self.work)
-        self.assertIn("Archived", r.stdout)
         self.assertNotIn("Pointer saved", r.stdout)
+        archived = r.stdout.split("Archived: ", 1)[1].splitlines()[0]
+        with open(archived, encoding="utf-8") as f:
+            self.assertEqual(f.read(), HANDOFF.format(v=2), "the archive holds this version in full")
         self.assertEqual(self.session_start("startup").stdout, "", "resumed in place: nothing to inject later")
+
+    def test_archive_only_failure_does_not_claim_a_pointer(self):
+        p = self.write_handoff(1)
+        os.makedirs(os.path.join(self.home, ".claude"))
+        open(os.path.join(self.home, ".claude", "handoff-history"), "w").close()  # a file where the dir goes
+        r = run(AFTER_CLEAR, ["--mark", p, "--archive-only"], home=self.home, cwd=self.work)
+        self.assertIn("WARNING: archiving failed", r.stdout)
+        self.assertNotIn("pointer was saved", r.stdout)
 
     def test_other_source_keeps_pointer(self):
         p = self.write_handoff(1)

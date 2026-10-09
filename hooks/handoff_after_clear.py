@@ -124,7 +124,8 @@ def mark(path, pointer=True):
     try:
         print("Archived: %s" % archive(path, owner))
     except Exception as e:  # a failed archive must not block the pointer, but it must be visible
-        print("WARNING: archiving failed (the pointer was saved): %r" % e)
+        print("WARNING: archiving failed (%s): %r"
+              % ("the pointer was saved" if pointer else "the handoff file itself is untouched", e))
     if os.path.realpath(owner) != os.path.realpath(os.getcwd()):
         print("Note: the shell is in %s; the pointer is attached to %s, where the handoff file lives." % (os.getcwd(), owner))
 
