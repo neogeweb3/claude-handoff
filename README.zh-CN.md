@@ -65,7 +65,7 @@ claude plugin marketplace update claude-handoff && claude plugin update handoff@
 
 ## 从旧版安装升级
 
-插件出现之前装过（用 `install.py`，或者单独装过 `handoff-compact` 插件）？照上面装插件就行。旧的那几样还登记着的时候，插件里对应的部分会先让开，不会重复触发；每次新开对话会提示一行，说还剩哪些旧的。想彻底换过来，就跑那行提示里给的命令（`python3 "<插件目录>/scripts/migrate.py"`，插件目录是 `claude plugin list --json` 里 `handoff@claude-handoff` 的 `installPath`）。
+插件出现之前装过（用 `install.py`，或者单独装过 `handoff-compact` 插件）？照上面装插件就行；以前加过这个 marketplace 的，先刷新一下（`claude plugin marketplace update claude-handoff`），不然安装会说找不到插件。旧的那几样还登记着的时候，插件里对应的部分会先让开，不会重复触发；每次新开对话会提示一行，说还剩哪些旧的。想彻底换过来，就跑那行提示里给的命令（`python3 "<插件目录>/scripts/migrate.py"`，插件目录是 `claude plugin list --json` 里 `handoff@claude-handoff` 的 `installPath`）。
 
 它先列出会改什么，什么都不动；确认后加 `--apply` 再跑一次才真改。它会备份 `settings.json`，只删本项目的 hook 条目，把旧文件挪进 `~/.claude/handoff-migrated-<时间>/`（你自己写的 `/handoff` 命令不碰），并卸载 `handoff-compact`。存档的交接不动。不换也行，旧的照常能用。
 

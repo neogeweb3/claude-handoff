@@ -22,7 +22,7 @@ Any file listed, or a count above 0, means the user installed claude-handoff bef
 ## 2. Install the plugin
 
 ```bash
-claude plugin marketplace add neogeweb3/claude-handoff && claude plugin install handoff@claude-handoff
+claude plugin marketplace add neogeweb3/claude-handoff; claude plugin marketplace update claude-handoff && claude plugin install handoff@claude-handoff
 ```
 
 Both are safe to rerun ("already added" / "already installed" is fine).

@@ -65,7 +65,7 @@ The handoff is written in the language you use with Claude; your own messages ar
 
 ## Upgrading from the old install
 
-Installed before the plugin existed (with `install.py`, or the separate `handoff-compact` plugin)? Install the plugin as above. While the old copies are still registered, the plugin's matching parts stay silent, so nothing runs twice, and each new conversation shows one line saying what is left. To switch fully, run the command that line shows (`python3 "<plugin folder>/scripts/migrate.py"`; the plugin folder is the `installPath` of `handoff@claude-handoff` in `claude plugin list --json`).
+Installed before the plugin existed (with `install.py`, or the separate `handoff-compact` plugin)? Install the plugin as above; if you had added this marketplace before, refresh it first (`claude plugin marketplace update claude-handoff`), or the install says the plugin is not found. While the old copies are still registered, the plugin's matching parts stay silent, so nothing runs twice, and each new conversation shows one line saying what is left. To switch fully, run the command that line shows (`python3 "<plugin folder>/scripts/migrate.py"`; the plugin folder is the `installPath` of `handoff@claude-handoff` in `claude plugin list --json`).
 
 It lists what it would change and changes nothing; run it again with `--apply` to do it. It backs up `settings.json`, removes only this project's hook entries, moves the old files to `~/.claude/handoff-migrated-<time>/` (a `/handoff` command of your own is left alone), and uninstalls `handoff-compact`. Your archived handoffs are not touched. Not switching is fine too: the old install keeps working.
 
